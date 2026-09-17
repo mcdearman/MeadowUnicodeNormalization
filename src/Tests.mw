@@ -1,0 +1,136 @@
+-- The port against the crate: every case in `Cases.mw`, whose expected results
+-- came from calling the crate itself, plus a few examples.
+--
+-- Every declaration carries `@cfg(test)`, as the tests are no part of the
+-- package.
+
+@cfg(test)
+use Std.Test (assertEq)
+@cfg(test)
+use Std.Collections.Vector as V
+@cfg(test)
+use unicodeNormalization.Cases (cases)
+@cfg(test)
+use unicodeNormalization.Api
+@cfg(test)
+use unicodeNormalization.Api.IsNormalized.*
+
+@cfg(test)
+fun digit i = toInt (stringByteAt cases i) - 48
+
+@cfg(test)
+fun num i n =
+  let rec go k acc = if k >= n then acc else go (k + 1) (acc * 64 + digit (i + k)) in
+  (go 0 0, i + n)
+
+@cfg(test)
+fun str i =
+  let len = fst (num i 3) in
+  (stringSlice cases (i + 3) (i + 3 + len), i + 3 + len)
+
+@cfg(test)
+fun strs i n =
+  let rec go k at acc =
+    if k >= n
+    then (acc, at)
+    else
+      let s = str at in
+      go (k + 1) (snd s) (V.pushBack acc (fst s))
+  in
+  go 0 i V.empty
+
+@cfg(test)
+fun digits i n = (V.map (\k -> fst (num (i + k) 1)) (V.range 0 n), i + n)
+
+@cfg(test)
+fun quickIndex q =
+  match q with
+  | Yes -> 0
+  | No -> 1
+  | Maybe -> 2
+
+@cfg(test)
+fun flag b = if b then 1 else 0
+
+@cfg(test)
+fun asText cs = charsToString (V.toArray cs)
+
+-- One case at `i`: `(input, expected, actual, next)`, the answers as strings.
+@cfg(test)
+fun runCase i =
+  let kind = fst (num i 1) in
+  if kind == 0
+  then
+    let t = str (i + 1) in
+    let s = fst t in
+    let forms = strs (snd t) 6 in
+    let quick = digits (snd forms) 6 in
+    let bools = digits (snd quick) 6 in
+    let expected = (fst forms, fst quick, fst bools) in
+    let actual =
+      (
+        [nfd s, nfkd s, nfc s, nfkc s, cjkCompatVariants s, streamSafe s],
+        V.map
+          quickIndex
+          [
+            isNfcQuick s,
+            isNfkcQuick s,
+            isNfdQuick s,
+            isNfkdQuick s,
+            isNfcStreamSafeQuick s,
+            isNfdStreamSafeQuick s
+          ],
+        V.map flag [isNfc s, isNfkc s, isNfd s, isNfkd s, isNfcStreamSafe s, isNfdStreamSafe s]
+      )
+    in
+    (s, expected, actual, snd bools)
+  else if kind == 1
+  then
+    let cp = num (i + 1) 4 in
+    let cls = num (snd cp) 2 in
+    let ds = strs (snd cls) 3 in
+    let flags = digits (snd ds) 2 in
+    let c = charFromCode (fst cp) in
+    let expected = (fst ds, [fst cls], fst flags) in
+    let actual =
+      (
+        V.map asText [decomposeCanonical c, decomposeCompatible c, decomposeCjkCompatVariants c],
+        [canonicalCombiningClass c],
+        [flag (isCombiningMark c), flag (isPublicAssigned c)]
+      )
+    in
+    ("U+${fst cp}", expected, actual, snd flags)
+  else
+    let a = num (i + 1) 4 in
+    let b = num (snd a) 4 in
+    let r = num (snd b) 4 in
+    let got =
+      match compose (charFromCode (fst a)) (charFromCode (fst b)) with
+      | Just c -> charCode c
+      | None -> 0
+    in
+    ("compose ${fst a} ${fst b}", ([], [fst r], []), ([], [got], []), snd r)
+
+@cfg(test)
+fun check i bad =
+  if i >= stringByteLength cases
+  then bad
+  else
+    match runCase i with
+    | (input, expected, got, next) ->
+        check next (if expected == got then bad else V.pushBack bad (input, expected, got))
+
+-- Failures list (input, expected, actual).
+@cfg(test)
+@test fun resultsMatchTheCrate () =
+  assertEq (V.take (check 0 V.empty) 3) [] "cases where the port and the crate differ"
+
+@cfg(test)
+@test fun examples () =
+  let a = assertEq (nfd "\u{1e0b}\u{323}") "d\u{323}\u{307}" "canonical order" in
+  let b = assertEq (nfc "e\u{301}") "\u{e9}" "composition" in
+  let c = assertEq (nfkd "\u{2126}\u{2026}") "\u{3a9}..." "compatibility" in
+  let d = assertEq (nfc "\u{1100}\u{1161}\u{11a8}") "\u{ac01}" "Hangul" in
+  let e = assertEq (isNfc "caf\u{e9}") True "is NFC" in
+  let f = assertEq (isNfcQuick "e\u{301}") Maybe "a combining mark may compose" in
+  assertEq (compose 'e' '\u{301}') (Just '\u{e9}') "compose"

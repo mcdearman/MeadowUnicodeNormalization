@@ -1,0 +1,100 @@
+-- The package's surface, re-exported by `Lib.mw`.
+
+use Std.Collections.Vector as V
+use unicodeNormalization.Tables as T
+use unicodeNormalization.Lookup
+use unicodeNormalization.Normalize
+
+fun codes s = V.map charCode (V.fromArray (stringToChars s))
+
+fun text cps = charsToString (V.toArray (V.map charFromCode cps))
+
+fun chars cps = V.map charFromCode cps
+
+-- `s` in Normalization Form D: canonical decomposition.
+@pub fun nfd s = text (nfdCps (codes s))
+
+-- `s` in Normalization Form KD: compatibility decomposition.
+@pub fun nfkd s = text (nfkdCps (codes s))
+
+-- `s` in Normalization Form C: canonical decomposition, then composition.
+@pub fun nfc s = text (nfcCps (codes s))
+
+-- `s` in Normalization Form KC: compatibility decomposition, then canonical
+-- composition.
+@pub fun nfkc s = text (nfkcCps (codes s))
+
+-- `s` with CJK compatibility ideographs replaced by their standardized
+-- variation sequences, which, unlike their NFC forms, keep them distinct.
+@pub fun cjkCompatVariants s = text (cjkCps (codes s))
+
+-- `s` made stream-safe (UAX #15): a U+034F COMBINING GRAPHEME JOINER before
+-- any character that would make more than 30 non-starters in a row.
+@pub fun streamSafe s = text (streamSafeCps (codes s))
+
+-- What a quick check can say.
+@pub data IsNormalized = Yes | No | Maybe
+
+fun answer q =
+  if q == 0 then IsNormalized.Yes else if q == 1 then IsNormalized.No else IsNormalized.Maybe
+
+-- Whether `s` is in NFC, as far as can be told without normalizing it.
+@pub fun isNfcQuick s = answer (quickCheck qcNfc False (codes s))
+
+@pub fun isNfkcQuick s = answer (quickCheck qcNfkc False (codes s))
+
+@pub fun isNfdQuick s = answer (quickCheck qcNfd False (codes s))
+
+@pub fun isNfkdQuick s = answer (quickCheck qcNfkd False (codes s))
+
+@pub fun isNfcStreamSafeQuick s = answer (quickCheck qcNfc True (codes s))
+
+@pub fun isNfdStreamSafeQuick s = answer (quickCheck qcNfd True (codes s))
+
+-- `quick`'s answer, normalizing with `normal` only if it cannot tell.
+fun decide quick normal s =
+  let q = quick (codes s) in
+  if q == 0 then True else if q == 1 then False else normal s == s
+
+-- Whether `s` is in NFC.
+@pub fun isNfc s = decide (quickCheck qcNfc False) nfc s
+
+@pub fun isNfkc s = decide (quickCheck qcNfkc False) nfkc s
+
+@pub fun isNfd s = decide (quickCheck qcNfd False) nfd s
+
+@pub fun isNfkd s = decide (quickCheck qcNfkd False) nfkd s
+
+-- Whether `s` is in NFC and stream-safe.
+@pub fun isNfcStreamSafe s = decide (quickCheck qcNfc True) (\x -> nfc (streamSafe x)) s
+
+@pub fun isNfdStreamSafe s = decide (quickCheck qcNfd True) (\x -> nfd (streamSafe x)) s
+
+-- --- characters ---------------------------------------------------------------------------
+
+-- The canonical combining class of `c`: 0 for a starter.
+@pub fun canonicalCombiningClass c = combiningClass (charCode c)
+
+-- Whether `c` is a combining mark (General_Category=Mark).
+@pub fun isCombiningMark c = isCombiningMarkCp (charCode c)
+
+-- Whether `c` is assigned for public use in this version of Unicode.
+@pub fun isPublicAssigned c = isPublicAssignedCp (charCode c)
+
+-- `c`'s full canonical decomposition, which is `[c]` if it has none.
+@pub fun decomposeCanonical c = chars (decomposeCanonicalCp (charCode c))
+
+-- `c`'s full compatibility decomposition.
+@pub fun decomposeCompatible c = chars (decomposeCompatibleCp (charCode c))
+
+-- `c`'s standardized variation sequence, if it is a CJK compatibility
+-- ideograph.
+@pub fun decomposeCjkCompatVariants c = chars (decomposeCjkCp (charCode c))
+
+-- The primary composite of `a` followed by `b`, if there is one.
+@pub fun compose a b =
+  let r = composeCp (charCode a) (charCode b) in
+  if r < 0 then None else Just (charFromCode r)
+
+-- The version of Unicode the tables follow, as `(major, minor, update)`.
+@pub def unicodeVersion = T.unicodeVersion

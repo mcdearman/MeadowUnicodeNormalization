@@ -1,0 +1,231 @@
+-- The normalization algorithms: the crate's `src/normalize.rs`,
+-- `src/decompose.rs`, `src/recompose.rs`, `src/replace.rs`,
+-- `src/stream_safe.rs` and `src/quick_check.rs`.
+--
+-- The crate's are iterators; these take and give a whole vector of code
+-- points, in the same order the iterators would give them.
+--
+-- Copyright 2012-2025 The Rust Project Developers, and the Meadow port's
+-- authors. Dual-licensed under Apache-2.0 or MIT: see COPYRIGHT.
+
+use Std.Collections.Vector as V
+use unicodeNormalization.Lookup
+
+-- --- Hangul ---------------------------------------------------------------------------
+
+def sBase = 0xAC00
+def lBase = 0x1100
+def vBase = 0x1161
+def tBase = 0x11A7
+def lCount = 19
+def vCount = 21
+def tCount = 28
+def nCount = 588
+def sCount = 11172
+
+@pub(pkg) fun isHangulSyllable cp = cp >= sBase and cp < sBase + sCount
+
+fun decomposeHangul s =
+  let sIndex = s - sBase in
+  let l = lBase + sIndex / nCount in
+  let v = vBase + (sIndex % nCount) / tCount in
+  let t = sIndex % tCount in
+  if t > 0 then [l, v, tBase + t] else [l, v]
+
+fun hangulDecompositionLength s = if (s - sBase) % tCount > 0 then 3 else 2
+
+fun composeHangul a b =
+  if a >= lBase and a < lBase + lCount and b >= vBase and b < vBase + vCount
+  then sBase + ((a - lBase) * nCount + (b - vBase) * tCount)
+  else if isHangulSyllable a and b > tBase and b < tBase + tCount and (a - sBase) % tCount == 0
+  then a + (b - tBase)
+  else 0 - 1
+
+-- --- one character ----------------------------------------------------------------------
+
+fun decomposeWith lookup cp =
+  if cp <= 0x7F
+  then [cp]
+  else if isHangulSyllable cp
+  then decomposeHangul cp
+  else
+    match lookup cp with
+    | Just d -> d
+    | None -> [cp]
+
+fun compatibleLookup cp =
+  match compatibilityFullyDecomposed cp with
+  | Just d -> Just d
+  | None -> canonicalFullyDecomposed cp
+
+@pub(pkg) fun decomposeCanonicalCp cp = decomposeWith canonicalFullyDecomposed cp
+
+@pub(pkg) fun decomposeCompatibleCp cp = decomposeWith compatibleLookup cp
+
+-- CJK compatibility variants: ASCII and Hangul are left alone.
+@pub(pkg) fun decomposeCjkCp cp =
+  if cp <= 0x7F
+  then [cp]
+  else
+    match cjkCompatVariantsFullyDecomposed cp with
+    | Just d -> d
+    | None -> [cp]
+
+-- The composite of `a` then `b`, or `0 - 1`.
+@pub(pkg) fun composeCp a b =
+  let h = composeHangul a b in
+  if h >= 0 then h else compositionTable a b
+
+-- --- decomposition ----------------------------------------------------------------------
+
+-- `run` stably sorted by combining class: an insertion sort, as runs are short.
+fun sortRun run =
+  V.foldl
+    (\sorted cp ->
+      let c = combiningClass cp in
+      let before = \k -> combiningClass (V.getOr 0 sorted (k - 1)) in
+      let rec place k = if k > 0 and before k > c then place (k - 1) else k in
+      let at = place (V.len sorted) in
+      V.append (V.pushBack (V.take sorted at) cp) (V.drop sorted at))
+    V.empty
+    run
+
+-- Every character decomposed by `decompose`, with each run of non-starters put
+-- in canonical order.
+fun decomposeAll decompose cps =
+  let step = \acc cp ->
+    match acc with
+    | (out, run) ->
+        V.foldl
+        (\acc2 d ->
+          match acc2 with
+          | (out2, run2) ->
+              if combiningClass d == 0
+              then (V.pushBack (V.append out2 (sortRun run2)) d, V.empty)
+              else (out2, V.pushBack run2 d))
+        (out, run)
+        (decompose cp)
+  in
+  match V.foldl step (V.empty, V.empty) cps with
+  | (out, run) -> V.append out (sortRun run)
+
+@pub(pkg) fun nfdCps cps = decomposeAll decomposeCanonicalCp cps
+
+@pub(pkg) fun nfkdCps cps = decomposeAll decomposeCompatibleCp cps
+
+-- --- composition ------------------------------------------------------------------------
+
+-- The crate's `Recompositions`, over the decomposed characters. `composee` and
+-- `lastCcc` are `0 - 1` for none.
+fun recompose cps =
+  let n = V.len cps in
+  let rec go i composee lastCcc buffer out =
+    if i >= n
+    then V.append (if composee >= 0 then V.pushBack out composee else out) buffer
+    else
+      let ch = V.getOr 0 cps i in
+      let cls = combiningClass ch in
+      if composee < 0
+      then
+        if cls != 0
+        then go (i + 1) composee lastCcc buffer (V.pushBack out ch)
+        else go (i + 1) ch lastCcc buffer out
+      else if lastCcc < 0
+      then
+        let r = composeCp composee ch in
+        if r >= 0
+        then go (i + 1) r lastCcc buffer out
+        else if cls == 0
+        then go (i + 1) ch lastCcc buffer (V.pushBack out composee)
+        else go (i + 1) composee cls (V.pushBack buffer ch) out
+      else if lastCcc >= cls
+      then
+        if cls == 0
+        then go (i + 1) ch (0 - 1) V.empty (V.append (V.pushBack out composee) buffer)
+        else go (i + 1) composee cls (V.pushBack buffer ch) out
+      else
+        let r = composeCp composee ch in
+        if r >= 0
+        then go (i + 1) r lastCcc buffer out
+        else go (i + 1) composee cls (V.pushBack buffer ch) out
+  in
+  go 0 (0 - 1) (0 - 1) V.empty V.empty
+
+@pub(pkg) fun nfcCps cps = recompose (nfdCps cps)
+
+@pub(pkg) fun nfkcCps cps = recompose (nfkdCps cps)
+
+@pub(pkg) fun cjkCps cps = V.concatMap decomposeCjkCp cps
+
+-- --- stream safety ----------------------------------------------------------------------
+
+def maxNonstarters = 30
+
+def combiningGraphemeJoiner = 0x034F
+
+-- `(leading, trailing, length)` of `cp`'s compatibility decomposition, in
+-- non-starters and characters.
+fun classifyNonstarters cp =
+  if cp <= 0x7F
+  then (0, 0, 1)
+  else if isHangulSyllable cp
+  then (0, 0, hangulDecompositionLength cp)
+  else
+    match compatibleLookup cp with
+    | Just d ->
+        (
+          match nonstarterCounts cp with
+          | (lead, trail) -> (lead, trail, V.len d)
+        )
+    | None ->
+        let ns = if combiningClass cp != 0 then 1 else 0 in
+        (ns, ns, 1)
+
+-- The crate's `StreamSafe`: a combining grapheme joiner before any character
+-- that would make more than 30 non-starters in a row.
+@pub(pkg) fun streamSafeCps cps =
+  let step = \acc cp ->
+    match acc with
+    | (count, out) ->
+        match classifyNonstarters cp with
+        | (lead, trail, len) ->
+            let broken = count + lead > maxNonstarters in
+            let count2 = if broken then 0 else count in
+            let out2 = if broken then V.pushBack out combiningGraphemeJoiner else out in
+            let count3 = if lead == len then count2 + len else trail in
+            (count3, V.pushBack out2 cp)
+  in
+  snd (V.foldl step (0, V.empty) cps)
+
+-- --- quick check ------------------------------------------------------------------------
+
+-- 0 Yes, 1 No, 2 Maybe.
+@pub(pkg) fun quickCheck isAllowed streamSafe cps =
+  let n = V.len cps in
+  let rec go i lastCc count result =
+    if i >= n
+    then result
+    else
+      let ch = V.getOr 0 cps i in
+      if ch <= 0x7F
+      then go (i + 1) 0 0 result
+      else
+        let cc = combiningClass ch in
+        if lastCc > cc and cc != 0
+        then 1
+        else
+          let q = isAllowed ch in
+          if q == 1
+          then 1
+          else
+            let result2 = if q == 2 then 2 else result in
+            if streamSafe
+            then
+              match classifyNonstarters ch with
+              | (lead, trail, len) ->
+                  if count + lead > maxNonstarters
+                  then 1
+                  else go (i + 1) cc (if lead == len then count + len else trail) result2
+            else go (i + 1) cc count result2
+  in
+  go 0 0 0 0

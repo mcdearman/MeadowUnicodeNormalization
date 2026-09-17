@@ -1,0 +1,24 @@
+-- unicodeNormalization: the Unicode Normalization Forms of UAX #15 -- NFD,
+-- NFC, NFKD and NFKC -- with quick checks, stream safety and CJK
+-- compatibility variants.
+--
+-- A port of Rust's `unicode-normalization` crate, version 0.1.25, covering
+-- Unicode 17.0.0. The tables are generated from the crate, and the tests hold
+-- this port to its answers, and to the official NormalizationTest.txt.
+--
+--   use unicodeNormalization (nfc, nfd)
+--
+--   nfc "e\u{301}"  -- "é" (U+00E9)
+--   nfd "é"         -- "e\u{301}"
+
+mod Tables
+mod Lookup
+mod Normalize
+mod Api
+@cfg(test)
+mod Cases
+@cfg(test)
+mod Tests
+
+@pub use unicodeNormalization.Api
+@pub use unicodeNormalization.Api.IsNormalized.*

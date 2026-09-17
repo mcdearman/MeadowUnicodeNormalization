@@ -1,0 +1,13 @@
+unicodeNormalization is a port of the Rust crate unicode-normalization
+(https://github.com/unicode-rs/unicode-normalization), version 0.1.25, to
+Meadow. Its tables and test cases are generated from that crate, and its
+algorithms are translated from the crate's source. Some test cases come from
+the Unicode Character Database's NormalizationTest.txt.
+
+The crate is Copyright 2012-2025 The Rust Project Developers, and is
+dual-licensed under the Apache License, Version 2.0, and the MIT license. So
+is this port, at your option: see LICENSE-APACHE and LICENSE-MIT.
+
+The data describes the Unicode Character Database, which is Copyright
+Unicode, Inc. and distributed under the Unicode License
+(https://www.unicode.org/license.txt).

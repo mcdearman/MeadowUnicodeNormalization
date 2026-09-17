@@ -1,0 +1,101 @@
+-- Reading the tables in `Tables.mw`: the crate's `src/lookups.rs`, with binary
+-- searches over sorted records in place of its perfect hashes.
+--
+-- Each table is a string of fixed-width records whose fields are base-64
+-- digits, `'0'` standing for 0 up to `'o'` for 63, most significant first.
+--
+-- Copyright 2012-2025 The Rust Project Developers, and the Meadow port's
+-- authors. Dual-licensed under Apache-2.0 or MIT: see COPYRIGHT.
+
+use Std.Collections.Vector as V
+use unicodeNormalization.Tables
+
+-- `toInt` first: a byte is a `UInt8`, and arithmetic on it would wrap at 256.
+fun digit s i = toInt (stringByteAt s i) - 48
+
+fun field s i n =
+  let rec go k acc = if k >= n then acc else go (k + 1) (acc * 64 + digit s (i + k)) in
+  go 0 0
+
+fun codePoint s i = field s i 4
+
+-- The record of `table` (records `size` digits long) whose key -- as `key`
+-- reads it at a record's start -- is `target`, or `0 - 1`.
+fun findExact table size key target =
+  let rec go lo hi =
+    if lo >= hi
+    then 0 - 1
+    else
+      let mid = (lo + hi) / 2 in
+      let k = key (mid * size) in
+      if target < k then go lo mid else if target > k then go (mid + 1) hi else mid * size
+  in
+  go 0 (stringByteLength table / size)
+
+-- The record of a `lo hi …` table (records `size` digits long) whose range
+-- holds `cp`, or `0 - 1`.
+fun findRange table size cp =
+  let rec go lo hi =
+    if lo >= hi
+    then 0 - 1
+    else
+      let mid = (lo + hi) / 2 in
+      let at = mid * size in
+      if cp < codePoint table at
+      then go lo mid
+      else if cp > codePoint table (at + 4)
+      then go (mid + 1) hi
+      else at
+  in
+  go 0 (stringByteLength table / size)
+
+fun inRanges table cp = findRange table 8 cp >= 0
+
+-- The value a `lo hi value` table gives `cp`, or 0.
+fun valueIn table width cp =
+  let at = findRange table (8 + width) cp in
+  if at < 0 then 0 else field table (at + 8) width
+
+@pub(pkg) fun combiningClass cp = if cp < 0x80 then 0 else valueIn combiningClasses 2 cp
+
+-- A decomposition from an index and its data, or `None`.
+fun decomposition index points cp =
+  let at = findExact index 8 (\i -> codePoint index i) cp in
+  if at < 0
+  then None
+  else
+    let start = field index (at + 4) 3 in
+    let len = field index (at + 7) 1 in
+    Just (V.map (\k -> codePoint points (start + 4 * k)) (V.range 0 len))
+
+@pub(pkg) fun canonicalFullyDecomposed cp = decomposition canonicalIndex canonicalData cp
+
+@pub(pkg) fun compatibilityFullyDecomposed cp =
+  decomposition compatibilityIndex compatibilityData cp
+
+@pub(pkg) fun cjkCompatVariantsFullyDecomposed cp = decomposition variantIndex variantData cp
+
+-- The primary composite of `a` then `b`, from the table, or `0 - 1`.
+@pub(pkg) fun compositionTable a b =
+  let key = \i -> codePoint composites i * 0x200000 + codePoint composites (i + 4) in
+  let at = findExact composites 12 key (a * 0x200000 + b) in
+  if at < 0 then 0 - 1 else codePoint composites (at + 8)
+
+-- How many non-starters a decomposable `cp`'s decomposition starts and ends
+-- with.
+@pub(pkg) fun nonstarterCounts cp =
+  let at = findExact nonstarters 6 (\i -> codePoint nonstarters i) cp in
+  if at < 0 then (0, 0) else (digit nonstarters (at + 4), digit nonstarters (at + 5))
+
+@pub(pkg) fun isCombiningMarkCp cp = inRanges combiningMarks cp
+
+@pub(pkg) fun isPublicAssignedCp cp = inRanges publicAssigned cp
+
+-- A quick-check property: 0 Yes, 1 No, 2 Maybe.
+@pub(pkg) fun qcNfc cp = valueIn quickNfc 1 cp
+
+@pub(pkg) fun qcNfkc cp = valueIn quickNfkc 1 cp
+
+@pub(pkg) fun qcNfd cp = valueIn quickNfd 1 cp
+
+@pub(pkg) fun qcNfkd cp = valueIn quickNfkd 1 cp
