@@ -9,11 +9,11 @@ use Std.Test (assertEq)
 @cfg(test)
 use Std.Collections.Vector as V
 @cfg(test)
-use unicodeNormalization.Cases (cases)
+use UnicodeNormalization.Cases (cases)
 @cfg(test)
-use unicodeNormalization.Api
+use UnicodeNormalization.Api
 @cfg(test)
-use unicodeNormalization.Api.IsNormalized.*
+use UnicodeNormalization.Api.IsNormalized.*
 
 @cfg(test)
 fun digit i = toInt (stringByteAt cases i) - 48

@@ -9,7 +9,7 @@
 -- authors. Dual-licensed under Apache-2.0 or MIT: see COPYRIGHT.
 
 use Std.Collections.Vector as V
-use unicodeNormalization.Lookup
+use UnicodeNormalization.Lookup
 
 -- --- Hangul ---------------------------------------------------------------------------
 

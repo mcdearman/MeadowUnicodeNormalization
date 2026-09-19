@@ -16,13 +16,13 @@ spellings only compare equal once both are in the same form.
 ## Install
 
 ```sh
-meadow add mcdearman/meadow-unicode-normalization
+meadow add mcdearman/MeadowUnicodeNormalization
 ```
 
 ## Use
 
 ```meadow
-use unicodeNormalization (nfc, nfd, nfkc, isNfc)
+use UnicodeNormalization (nfc, nfd, nfkc, isNfc)
 
 def main =
   ( nfc "e\u{301}" == "\u{e9}",        -- True: composed

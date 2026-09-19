@@ -6,7 +6,7 @@
 -- Unicode 17.0.0. The tables are generated from the crate, and the tests hold
 -- this port to its answers, and to the official NormalizationTest.txt.
 --
---   use unicodeNormalization (nfc, nfd)
+--   use UnicodeNormalization (nfc, nfd)
 --
 --   nfc "e\u{301}"  -- "é" (U+00E9)
 --   nfd "é"         -- "e\u{301}"
@@ -20,5 +20,5 @@ mod Cases
 @cfg(test)
 mod Tests
 
-@pub use unicodeNormalization.Api
-@pub use unicodeNormalization.Api.IsNormalized.*
+@pub use UnicodeNormalization.Api
+@pub use UnicodeNormalization.Api.IsNormalized.*

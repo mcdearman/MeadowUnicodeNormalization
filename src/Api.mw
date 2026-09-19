@@ -1,9 +1,9 @@
 -- The package's surface, re-exported by `Lib.mw`.
 
 use Std.Collections.Vector as V
-use unicodeNormalization.Tables as T
-use unicodeNormalization.Lookup
-use unicodeNormalization.Normalize
+use UnicodeNormalization.Tables as T
+use UnicodeNormalization.Lookup
+use UnicodeNormalization.Normalize
 
 fun codes s = V.map charCode (V.fromArray (stringToChars s))
 
