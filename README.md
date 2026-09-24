@@ -16,7 +16,7 @@ spellings only compare equal once both are in the same form.
 ## Install
 
 ```sh
-meadow add mcdearman/MeadowUnicodeNormalization
+meadow add mcdearman/UnicodeNormalization
 ```
 
 ## Use
